@@ -1,0 +1,304 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>AMApplicationBuild</key>
+	<string>523</string>
+	<key>AMApplicationVersion</key>
+	<string>2.10</string>
+	<key>AMDocumentVersion</key>
+	<string>2</string>
+	<key>actions</key>
+	<array>
+		<dict>
+			<key>action</key>
+			<dict>
+				<key>AMAccepts</key>
+				<dict>
+					<key>Container</key>
+					<string>List</string>
+					<key>Optional</key>
+					<true/>
+					<key>Types</key>
+					<array>
+						<string>com.apple.cocoa.string</string>
+					</array>
+				</dict>
+				<key>AMActionVersion</key>
+				<string>2.0.3</string>
+				<key>AMApplication</key>
+				<array>
+					<string>Automator</string>
+				</array>
+				<key>AMParameterProperties</key>
+				<dict>
+					<key>COMMAND_STRING</key>
+					<dict/>
+					<key>CheckedForUserDefaultShell</key>
+					<dict/>
+					<key>inputMethod</key>
+					<dict/>
+					<key>shell</key>
+					<dict/>
+					<key>source</key>
+					<dict/>
+				</dict>
+				<key>AMProvides</key>
+				<dict>
+					<key>Container</key>
+					<string>List</string>
+					<key>Types</key>
+					<array>
+						<string>com.apple.cocoa.string</string>
+					</array>
+				</dict>
+				<key>ActionBundlePath</key>
+				<string>/System/Library/Automator/Run Shell Script.action</string>
+				<key>ActionName</key>
+				<string>Run Shell Script</string>
+				<key>ActionParameters</key>
+				<dict>
+					<key>COMMAND_STRING</key>
+					<string>#!/bin/bash
+
+# The selected text to be summarized, passed as the first argument
+SELECTED_TEXT="$1"
+
+# Exit early if no text is provided
+if [ -z "$SELECTED_TEXT" ]; then
+  exit 0
+fi
+
+# Keychain service name
+SERVICE_NAME="right_click_summarize_openai_api_key"
+# Log file path
+LOG_FILE="/tmp/right_click_summarize_script.log"
+
+# Start logging
+echo "Starting script..." &gt; "$LOG_FILE"
+
+# Try to retrieve the API key from the Keychain
+API_KEY=$(security find-generic-password -a $USER -s "$SERVICE_NAME" -w 2&gt;/dev/null)
+
+if [ -z "$API_KEY" ]; then
+  echo "API key not found in Keychain." &gt;&gt; "$LOG_FILE"
+  osascript -e 'Tell application "System Events" to display dialog "API key not found. Please configure your API key." with title "Error"'
+  exit 1
+else
+  echo "API key successfully retrieved." &gt;&gt; "$LOG_FILE"
+fi
+
+# The selected text to be summarized, passed as the first argument
+SELECTED_TEXT="$1"
+
+# URL for the OpenAI Chat Completion API
+API_URL="https://api.openai.com/v1/chat/completions"
+
+# System prompt
+SYSTEM_PROMPT="You are an expert summarizer. Your task is to save time for the user. A summary can be MAXIMUM two sentences long, capturing the absolutely most important things."
+
+# Prepare the data for the API request using the full path to jq
+JSON_DATA=$(/opt/homebrew/bin/jq -n \
+                  --arg systemPrompt "$SYSTEM_PROMPT" \
+                  --arg userPrompt "Please summarize this for me: $SELECTED_TEXT" \
+                  '{model: "gpt-4-turbo-preview", messages: [{role: "system", content: $systemPrompt}, {role: "user", content: $userPrompt}], temperature: 0}')
+
+# Make the API request and capture the HTTP status code and response body
+HTTP_RESPONSE=$(curl -s -o response.json -w "%{http_code}" -X POST "$API_URL" \
+                 -H "Content-Type: application/json" \
+                 -H "Authorization: Bearer $API_KEY" \
+                 --data "$JSON_DATA")
+
+# Check if the request was successful
+if [ "$HTTP_RESPONSE" != "200" ]; then
+  # Log the HTTP status code
+  echo "API request failed with response code: $HTTP_RESPONSE" &gt;&gt; "$LOG_FILE"
+  # Log the error response body
+  echo "Error response from API:" &gt;&gt; "$LOG_FILE"
+  cat response.json &gt;&gt; "$LOG_FILE"
+  osascript -e 'Tell application "System Events" to display dialog "Failed to get a summary from OpenAI. Please check your internet connection and API key. For more information, check the log file at /tmp/right_click_summarize_script.log" with title "Error"'
+  exit 1
+else
+  echo "API request successful." &gt;&gt; "$LOG_FILE"
+fi
+
+# Extract the summary from the response using the full path to jq
+SUMMARY=$(/opt/homebrew/bin/jq -r '.choices[0].message.content' response.json)
+
+if [ -z "$SUMMARY" ]; then
+  echo "Failed to extract summary." &gt;&gt; "$LOG_FILE"
+  osascript -e 'Tell application "System Events" to display dialog "Failed to extract summary from the response." with title "Error"'
+  exit 1
+else
+  echo "Summary extracted successfully." &gt;&gt; "$LOG_FILE"
+fi
+
+# Use osascript to display the dialog and capture the button pressed by the user
+BUTTON_PRESSED=$(osascript &lt;&lt;EOF
+tell application "System Events"
+    set userChoice to button returned of (display dialog "$SUMMARY" buttons {"OK", "Copy Text"} default button "OK" with title "Summary")
+    return userChoice
+end tell
+EOF
+)
+
+# Check the button pressed by the user
+if [ "$BUTTON_PRESSED" = "Copy Text" ]; then
+    echo "$SUMMARY" | pbcopy
+    echo "Summary copied to clipboard."
+else
+    echo "OK pressed or dialog closed."
+fi</string>
+					<key>CheckedForUserDefaultShell</key>
+					<true/>
+					<key>inputMethod</key>
+					<integer>1</integer>
+					<key>shell</key>
+					<string>/bin/bash</string>
+					<key>source</key>
+					<string></string>
+				</dict>
+				<key>BundleIdentifier</key>
+				<string>com.apple.RunShellScript</string>
+				<key>CFBundleVersion</key>
+				<string>2.0.3</string>
+				<key>CanShowSelectedItemsWhenRun</key>
+				<false/>
+				<key>CanShowWhenRun</key>
+				<true/>
+				<key>Category</key>
+				<array>
+					<string>AMCategoryUtilities</string>
+				</array>
+				<key>Class Name</key>
+				<string>RunShellScriptAction</string>
+				<key>InputUUID</key>
+				<string>B073C765-147F-4060-A393-F1FA5654992C</string>
+				<key>Keywords</key>
+				<array>
+					<string>Shell</string>
+					<string>Script</string>
+					<string>Command</string>
+					<string>Run</string>
+					<string>Unix</string>
+				</array>
+				<key>OutputUUID</key>
+				<string>6FD62ADB-375A-446C-8813-0A850C7A30BC</string>
+				<key>ShowWhenRun</key>
+				<false/>
+				<key>UUID</key>
+				<string>D048560E-8EF8-4F87-BFD8-D4596CE88D86</string>
+				<key>UnlocalizedApplications</key>
+				<array>
+					<string>Automator</string>
+				</array>
+				<key>arguments</key>
+				<dict>
+					<key>0</key>
+					<dict>
+						<key>default value</key>
+						<integer>0</integer>
+						<key>name</key>
+						<string>inputMethod</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>0</string>
+					</dict>
+					<key>1</key>
+					<dict>
+						<key>default value</key>
+						<false/>
+						<key>name</key>
+						<string>CheckedForUserDefaultShell</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>1</string>
+					</dict>
+					<key>2</key>
+					<dict>
+						<key>default value</key>
+						<string></string>
+						<key>name</key>
+						<string>source</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>2</string>
+					</dict>
+					<key>3</key>
+					<dict>
+						<key>default value</key>
+						<string></string>
+						<key>name</key>
+						<string>COMMAND_STRING</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>3</string>
+					</dict>
+					<key>4</key>
+					<dict>
+						<key>default value</key>
+						<string>/bin/sh</string>
+						<key>name</key>
+						<string>shell</string>
+						<key>required</key>
+						<string>0</string>
+						<key>type</key>
+						<string>0</string>
+						<key>uuid</key>
+						<string>4</string>
+					</dict>
+				</dict>
+				<key>isViewVisible</key>
+				<integer>1</integer>
+				<key>location</key>
+				<string>544.000000:305.000000</string>
+				<key>nibPath</key>
+				<string>/System/Library/Automator/Run Shell Script.action/Contents/Resources/Base.lproj/main.nib</string>
+			</dict>
+			<key>isViewVisible</key>
+			<integer>1</integer>
+		</dict>
+	</array>
+	<key>connectors</key>
+	<dict/>
+	<key>workflowMetaData</key>
+	<dict>
+		<key>applicationBundleIDsByPath</key>
+		<dict/>
+		<key>applicationPaths</key>
+		<array/>
+		<key>inputTypeIdentifier</key>
+		<string>com.apple.Automator.text</string>
+		<key>outputTypeIdentifier</key>
+		<string>com.apple.Automator.nothing</string>
+		<key>presentationMode</key>
+		<integer>11</integer>
+		<key>processesInput</key>
+		<false/>
+		<key>serviceInputTypeIdentifier</key>
+		<string>com.apple.Automator.text</string>
+		<key>serviceOutputTypeIdentifier</key>
+		<string>com.apple.Automator.nothing</string>
+		<key>serviceProcessesInput</key>
+		<false/>
+		<key>systemImageName</key>
+		<string>NSActionTemplate</string>
+		<key>useAutomaticInputType</key>
+		<false/>
+		<key>workflowTypeIdentifier</key>
+		<string>com.apple.Automator.servicesMenu</string>
+	</dict>
+</dict>
+</plist>
